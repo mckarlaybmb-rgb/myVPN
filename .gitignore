@@ -1,0 +1,64 @@
+# Gitignore for vpnos
+
+# OS / Editor / Dev
+.DS_Store
+.vscode/
+.idea/
+*.iml
+
+# Go
+**/bin/
+**/pkg/
+*.exe
+*.test
+*.out
+vendor/
+
+# Build artifacts
+dist/
+.build/
+tmp/
+
+# Docker & Compose
+docker-compose.override.yml
+docker-compose.*.yml
+*.env.local
+.env    # ignore local secrets (use .env.example)
+*.env
+
+# Postgres runtime & exports
+pgdata/
+postgres-data/
+
+# DB dumps / exports (ignore large dump files)
+*.dump
+*.backup
+*.sql.gz
+*.sql.tar
+*.psql
+*.pgdump
+
+# Temporary SQL exports
+*_export.sql
+*.sql.tmp
+*.tmp.sql
+
+# Note: Do NOT ignore migration SQL files in backend/migrations/
+
+# Logs
+logs/
+*.log
+
+# Secrets and certs
+*.pem
+*.key
+*.crt
+secrets/
+secrets.yml
+
+# Tests / Coverage / Profiling
+coverage.out
+*.prof
+
+# Misc
+node_modules/

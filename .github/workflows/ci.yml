@@ -1,0 +1,47 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: vpnos
+          POSTGRES_PASSWORD: vpnos_pass
+          POSTGRES_DB: vpnos
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+
+      - name: Install dependencies
+        run: go mod download
+        working-directory: backend
+
+      - name: gofmt check
+        run: |
+          go list ./... | xargs -n1 gofmt -l | tee /tmp/gofmt.txt
+          if [ -s /tmp/gofmt.txt ]; then cat /tmp/gofmt.txt; exit 1; fi
+        working-directory: backend
+
+      - name: go vet
+        run: go vet ./...
+        working-directory: backend
+
+      - name: run tests
+        env:
+          DATABASE_URL: postgres://vpnos:vpnos_pass@127.0.0.1:5432/vpnos?sslmode=disable
+        run: |
+          for i in `seq 1 10`; do pg_isready -h 127.0.0.1 && break || sleep 1; done
+          go test ./... -v
+        working-directory: backend

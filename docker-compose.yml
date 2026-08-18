@@ -1,0 +1,31 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vpnos
+      POSTGRES_PASSWORD: vpnos_pass
+      POSTGRES_DB: vpnos
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      - DATABASE_URL=postgres://vpnos:vpnos_pass@postgres:5432/vpnos?sslmode=disable
+      - BACKEND_PORT=8080
+      - ADMIN_API_KEY=CHANGE_ME
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    volumes:
+      - ./backend:/src
+    restart: unless-stopped
+
+volumes:
+  pgdata:

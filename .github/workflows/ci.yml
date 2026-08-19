@@ -30,7 +30,7 @@ jobs:
 
       - name: gofmt check
         run: |
-          go list ./... | xargs -n1 gofmt -l | tee /tmp/gofmt.txt
+          find . -name '*.go' -type f -print0 | xargs -0 gofmt -l | tee /tmp/gofmt.txt
           if [ -s /tmp/gofmt.txt ]; then cat /tmp/gofmt.txt; exit 1; fi
         working-directory: backend
 

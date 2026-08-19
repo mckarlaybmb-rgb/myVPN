@@ -2,6 +2,8 @@
 
 Base path: `/api/v1`
 
+All `/api/v1` requests require the development `X-API-Key` header matching `ADMIN_API_KEY`. `/health` is public.
+
 ## Health
 
 `GET /health` returns `{"status":"ok"}`.
@@ -19,6 +21,8 @@ Request:
 ```
 
 The response is the created user with `id`, `email`, and `created_at`.
+
+`DELETE /api/v1/users/{id}` deletes a user and returns HTTP 204.
 
 ## Subscriptions
 

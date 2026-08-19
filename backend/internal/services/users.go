@@ -2,21 +2,25 @@ package services
 
 import (
 	"context"
-	"fmt"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/models"
 )
 
-type UserService struct{ pool *pgxpool.Pool }
-func NewUserService(pool *pgxpool.Pool) *UserService { return &UserService{pool: pool} }
+type UserRepository interface {
+	List(context.Context) ([]models.User, error)
+	Create(context.Context, string) (models.User, error)
+	Delete(context.Context, string) error
+}
+type UserService struct{ repository UserRepository }
+
+func NewUserService(repository UserRepository) *UserService {
+	return &UserService{repository: repository}
+}
 func (service *UserService) List(ctx context.Context) ([]models.User, error) {
-	rows, err := service.pool.Query(ctx, `SELECT id::text, email, created_at FROM users ORDER BY created_at DESC`); if err != nil { return nil, err }; defer rows.Close()
-	users := make([]models.User, 0)
-	for rows.Next() { var user models.User; if err := rows.Scan(&user.ID, &user.Email, &user.CreatedAt); err != nil { return nil, err }; users = append(users, user) }
-	return users, rows.Err()
+	return service.repository.List(ctx)
 }
 func (service *UserService) Create(ctx context.Context, email string) (models.User, error) {
-	var user models.User
-	err := service.pool.QueryRow(ctx, `INSERT INTO users (email) VALUES ($1) RETURNING id::text, email, created_at`, email).Scan(&user.ID, &user.Email, &user.CreatedAt)
-	if err != nil { return user, fmt.Errorf("create user: %w", err) }; return user, nil
+	return service.repository.Create(ctx, email)
+}
+func (service *UserService) Delete(ctx context.Context, id string) error {
+	return service.repository.Delete(ctx, id)
 }

@@ -1,6 +1,6 @@
 # Database Schema - VPN OS v1
 
-The canonical schema is [001_initial.sql](../backend/migrations/001_initial.sql). Migrations run in filename order when the API starts.
+The canonical schema is [001_initial_schema.sql](../backend/migrations/001_initial_schema.sql). Migrations run in filename order when the API starts.
 
 ## Tables
 
@@ -36,3 +36,7 @@ The canonical schema is [001_initial.sql](../backend/migrations/001_initial.sql)
 - `attempts`, `last_error`, `available_at`, and timestamps support durable processing
 
 The queue has a partial index over pending jobs by availability and creation time. Future migrations should be versioned SQL files and should preserve existing data.
+
+## Planned
+
+Migration version tracking, audit history, traffic usage, billing entities, and additional node-management tables are planned. They are not part of the current schema.

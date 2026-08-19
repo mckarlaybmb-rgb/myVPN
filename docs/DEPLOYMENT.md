@@ -1,5 +1,7 @@
 # Deployment - VPN OS v1
 
+Status: Development deployment guidance
+
 ## Development
 
 From the repository root:
@@ -17,3 +19,7 @@ The API listens on port `8080` and PostgreSQL on port `5432`. Compose waits for 
 - Use TLS and authenticated administrative access before exposing the API publicly.
 - Restrict PostgreSQL and Xray administration to trusted network paths.
 - Add readiness checks and backups before operating persistent production data.
+
+## Planned
+
+Production migration version tracking, automated backups, observability, and hardened authentication are planned. The current Compose stack is a development setup with default credentials.

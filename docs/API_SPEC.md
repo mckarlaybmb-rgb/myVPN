@@ -1,5 +1,7 @@
 # API Specification
 
+Status: Phase 1 MVP
+
 Base path: `/api/v1`
 
 All `/api/v1` requests require the development `X-API-Key` header matching `ADMIN_API_KEY`. `/health` is public.
@@ -47,3 +49,7 @@ Request:
 ```
 
 `extra_days` must be greater than zero. The renewal also enqueues a durable job.
+
+## Planned
+
+Pagination, richer error envelopes, production authentication, node endpoints, metrics, and Xray health checks are planned and are not currently exposed.

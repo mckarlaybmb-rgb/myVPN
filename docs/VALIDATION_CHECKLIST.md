@@ -1,5 +1,7 @@
 # Validation Checklist
 
+## Implemented MVP Checks
+
 - Run `git diff --check`.
 - Run `go test ./...` from `backend`.
 - Validate Compose with `docker-compose config`.
@@ -8,4 +10,8 @@
 - Create a user with `POST /api/v1/users` and confirm the row exists.
 - Create a subscription with `POST /api/v1/subscriptions` and confirm its queue row starts as `pending`.
 - Confirm a queue consumer can claim, complete, and fail jobs as expected.
-- Before production, add integration coverage for PostgreSQL and Xray operations.
+
+## Planned Checks
+
+- Run a persistent worker against a test Xray implementation once that worker exists.
+- Validate retry, dead-letter, metrics, billing, and multi-node workflows after those features are implemented.

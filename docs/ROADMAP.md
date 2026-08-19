@@ -1,5 +1,7 @@
 # Roadmap
 
+Items below are Planned; none are claimed as implemented by this document.
+
 ## Phase 2
 
 - Implement a running background worker for `job_queue`.
@@ -9,7 +11,7 @@
 
 ## Later Phases
 
-- Subscription plans, renewals, cancellation, billing, and notifications.
+- Subscription plan catalogs, cancellation, billing, and notifications.
 - Traffic usage collection and quota enforcement.
 - Admin dashboard and operational queue tooling.
 - Multi-node orchestration and high-availability control-plane deployment.

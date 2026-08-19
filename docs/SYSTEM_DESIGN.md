@@ -1,5 +1,7 @@
 # System Design - VPN OS v1
 
+Status: Phase 1 MVP
+
 ## Scope
 
 The Phase 1 backend is a Go 1.24 HTTP service with PostgreSQL persistence. The API handlers validate requests and delegate database work to application services. Subscription creation also records a durable job for later Xray provisioning.
@@ -23,4 +25,8 @@ Local Compose credentials are development defaults only. Production deployments 
 
 ## Testing Strategy
 
-Run `go test ./...` from `backend`. Database integration tests should use an isolated PostgreSQL instance or Testcontainers when the test suite is added.
+Run `go test ./...` from `backend`. Unit tests use in-memory fakes for service dependencies. PostgreSQL integration tests run when `DATABASE_URL` is set and skip cleanly otherwise.
+
+## Planned
+
+Add transactional outbox behavior for subscription persistence and enqueueing, a persistent worker, retry scheduling, structured logging, and production authentication.

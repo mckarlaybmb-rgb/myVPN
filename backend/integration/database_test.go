@@ -6,10 +6,24 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/database"
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/jobs"
+	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/models"
+	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/repositories"
+	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/services"
+	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/xray"
 	"os"
 	"testing"
 	"time"
 )
+
+type integrationRuntime struct{ disabled int }
+
+func (runtime *integrationRuntime) CreateClient(context.Context, models.XrayClient) error { return nil }
+func (runtime *integrationRuntime) DeleteClient(context.Context, models.XrayClient) error { return nil }
+func (runtime *integrationRuntime) EnableClient(context.Context, models.XrayClient) error { return nil }
+func (runtime *integrationRuntime) DisableClient(context.Context, models.XrayClient) error {
+	runtime.disabled++
+	return nil
+}
 
 func TestPostgresMigrations(t *testing.T) {
 	databaseURL := os.Getenv("DATABASE_URL")
@@ -80,6 +94,62 @@ func TestQueueTransitions(t *testing.T) {
 	}
 	if err := assertJobStatus(ctx, pool, failedID, jobs.Failed); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestXrayClientPersistenceAndSubscriptionDisable(t *testing.T) {
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DATABASE_URL is not set")
+	}
+	ctx := context.Background()
+	pool, err := database.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := database.Migrate(ctx, pool, "../migrations"); err != nil {
+		t.Fatal(err)
+	}
+
+	email := fmt.Sprintf("xray-%d@example.com", time.Now().UnixNano())
+	user, err := repositories.NewUserRepository(pool).Create(ctx, email)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, user.ID)
+	runtime := &integrationRuntime{}
+	clientService := xray.NewService(repositories.NewXrayClientRepository(pool), runtime, "vless-reality-tcp")
+	client, err := clientService.CreateClient(ctx, user.ID, user.Email)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.UUID == "" || client.Protocol != "vless" || client.Config["inbound_tag"] != "vless-reality-tcp" {
+		t.Fatalf("unexpected client: %#v", client)
+	}
+	var storedUUID string
+	var storedConfig []byte
+	if err := pool.QueryRow(ctx, `SELECT uuid::text, config FROM xray_clients WHERE user_id = $1`, user.ID).Scan(&storedUUID, &storedConfig); err != nil {
+		t.Fatal(err)
+	}
+	if storedUUID != client.UUID || len(storedConfig) == 0 {
+		t.Fatalf("stored uuid/config: %q %s", storedUUID, storedConfig)
+	}
+
+	queue := jobs.NewQueue(pool)
+	subscription, err := services.NewSubscriptionService(repositories.NewSubscriptionRepository(pool), queue, clientService).Create(ctx, user.ID, "monthly", time.Now().Add(24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := services.NewSubscriptionService(repositories.NewSubscriptionRepository(pool), queue, clientService).Suspend(ctx, subscription.ID); err != nil {
+		t.Fatal(err)
+	}
+	var enabled bool
+	if err := pool.QueryRow(ctx, `SELECT enabled FROM xray_clients WHERE user_id = $1`, user.ID).Scan(&enabled); err != nil {
+		t.Fatal(err)
+	}
+	if enabled || runtime.disabled != 1 {
+		t.Fatalf("enabled=%v runtime=%#v", enabled, runtime)
 	}
 }
 

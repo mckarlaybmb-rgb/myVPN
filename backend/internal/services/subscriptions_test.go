@@ -19,12 +19,41 @@ func (fake *fakeSubscriptions) Renew(_ context.Context, id string, days int) (mo
 	fake.renewedDays = days
 	return models.Subscription{ID: id, UserID: "user-1"}, nil
 }
+func (fake *fakeSubscriptions) UpdateStatus(_ context.Context, id, status string) (models.Subscription, error) {
+	return models.Subscription{ID: id, UserID: "user-1", Status: status}, nil
+}
 
 type fakeQueue struct{ types []string }
+
+type fakeDisabler struct{ userID string }
+
+func (fake *fakeDisabler) DisableClient(_ context.Context, userID string) error {
+	fake.userID = userID
+	return nil
+}
 
 func (fake *fakeQueue) Enqueue(_ context.Context, jobType, _ string, _ map[string]string) (string, error) {
 	fake.types = append(fake.types, jobType)
 	return "job-1", nil
+}
+
+func TestSubscriptionSuspensionAndExpirationDisableClient(t *testing.T) {
+	repository := &fakeSubscriptions{}
+	disabler := &fakeDisabler{}
+	service := NewSubscriptionService(repository, &fakeQueue{}, disabler)
+	if _, err := service.Suspend(context.Background(), "sub-1"); err != nil {
+		t.Fatal(err)
+	}
+	if disabler.userID != "user-1" {
+		t.Fatalf("suspension disabled user %q", disabler.userID)
+	}
+	disabler.userID = ""
+	if _, err := service.Expire(context.Background(), "sub-1"); err != nil {
+		t.Fatal(err)
+	}
+	if disabler.userID != "user-1" {
+		t.Fatalf("expiration disabled user %q", disabler.userID)
+	}
 }
 func TestSubscriptionServiceEnqueuesCreateAndRenew(t *testing.T) {
 	repository := &fakeSubscriptions{}

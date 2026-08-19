@@ -16,6 +16,7 @@ import (
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/middleware"
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/repositories"
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/services"
+	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/xray"
 )
 
 func resolveMigrationsDir() string {
@@ -52,7 +53,8 @@ func main() {
 		log.Fatal(err)
 	}
 	queue := jobs.NewQueue(pool)
-	routes := handlers.New(services.NewUserService(repositories.NewUserRepository(pool)), services.NewSubscriptionService(repositories.NewSubscriptionRepository(pool), queue))
+	xrayService := xray.NewService(repositories.NewXrayClientRepository(pool), xray.NewHandlerServiceRuntime(cfg.XrayAPIAddr, cfg.XrayInbound), cfg.XrayInbound)
+	routes := handlers.New(services.NewUserService(repositories.NewUserRepository(pool), xrayService), services.NewSubscriptionService(repositories.NewSubscriptionRepository(pool), queue, xrayService))
 
 	apiHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
@@ -87,6 +89,16 @@ func main() {
 			id = strings.TrimSuffix(id, "/")
 			r.SetPathValue("id", id)
 			routes.RenewSubscription(w, r)
+			return
+		case method == http.MethodPost && strings.HasPrefix(path, "/api/v1/subscriptions/") && strings.HasSuffix(path, "/suspend"):
+			id := strings.TrimSuffix(strings.TrimPrefix(path, "/api/v1/subscriptions/"), "/suspend")
+			r.SetPathValue("id", strings.TrimSuffix(id, "/"))
+			routes.SuspendSubscription(w, r)
+			return
+		case method == http.MethodPost && strings.HasPrefix(path, "/api/v1/subscriptions/") && strings.HasSuffix(path, "/expire"):
+			id := strings.TrimSuffix(strings.TrimPrefix(path, "/api/v1/subscriptions/"), "/expire")
+			r.SetPathValue("id", strings.TrimSuffix(id, "/"))
+			routes.ExpireSubscription(w, r)
 			return
 		default:
 			http.NotFound(w, r)

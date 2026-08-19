@@ -78,6 +78,14 @@ func (handler *Handler) RenewSubscription(writer http.ResponseWriter, request *h
 	item, err := handler.subscriptions.Renew(request.Context(), request.PathValue("id"), input.ExtraDays)
 	writeResult(writer, item, err, http.StatusOK)
 }
+func (handler *Handler) SuspendSubscription(writer http.ResponseWriter, request *http.Request) {
+	item, err := handler.subscriptions.Suspend(request.Context(), request.PathValue("id"))
+	writeResult(writer, item, err, http.StatusOK)
+}
+func (handler *Handler) ExpireSubscription(writer http.ResponseWriter, request *http.Request) {
+	item, err := handler.subscriptions.Expire(request.Context(), request.PathValue("id"))
+	writeResult(writer, item, err, http.StatusOK)
+}
 func decode(writer http.ResponseWriter, request *http.Request, target any) bool {
 	if err := json.NewDecoder(request.Body).Decode(target); err != nil {
 		http.Error(writer, "invalid JSON body", http.StatusBadRequest)

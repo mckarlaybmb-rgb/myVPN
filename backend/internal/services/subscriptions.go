@@ -19,10 +19,23 @@ type JobEnqueuer interface {
 type SubscriptionService struct {
 	repository SubscriptionRepository
 	queue      JobEnqueuer
+	clients    ClientDisabler
 }
 
-func NewSubscriptionService(repository SubscriptionRepository, queue JobEnqueuer) *SubscriptionService {
-	return &SubscriptionService{repository: repository, queue: queue}
+type ClientDisabler interface {
+	DisableClient(context.Context, string) error
+}
+
+type SubscriptionStatusRepository interface {
+	UpdateStatus(context.Context, string, string) (models.Subscription, error)
+}
+
+func NewSubscriptionService(repository SubscriptionRepository, queue JobEnqueuer, clients ...ClientDisabler) *SubscriptionService {
+	var clientDisabler ClientDisabler
+	if len(clients) > 0 {
+		clientDisabler = clients[0]
+	}
+	return &SubscriptionService{repository: repository, queue: queue, clients: clientDisabler}
 }
 func (service *SubscriptionService) ListByUser(ctx context.Context, userID string) ([]models.Subscription, error) {
 	return service.repository.ListByUser(ctx, userID)
@@ -47,6 +60,31 @@ func (service *SubscriptionService) Renew(ctx context.Context, id string, extraD
 	}
 	if _, err := service.queue.Enqueue(ctx, "subscription.renewed", item.ID, map[string]string{"user_id": item.UserID}); err != nil {
 		return item, fmt.Errorf("enqueue renewal job: %w", err)
+	}
+	return item, nil
+}
+
+func (service *SubscriptionService) Suspend(ctx context.Context, id string) (models.Subscription, error) {
+	return service.updateStatus(ctx, id, "suspended")
+}
+
+func (service *SubscriptionService) Expire(ctx context.Context, id string) (models.Subscription, error) {
+	return service.updateStatus(ctx, id, "expired")
+}
+
+func (service *SubscriptionService) updateStatus(ctx context.Context, id, status string) (models.Subscription, error) {
+	repository, ok := service.repository.(SubscriptionStatusRepository)
+	if !ok {
+		return models.Subscription{}, fmt.Errorf("subscription status updates are not supported")
+	}
+	item, err := repository.UpdateStatus(ctx, id, status)
+	if err != nil {
+		return item, fmt.Errorf("update subscription status: %w", err)
+	}
+	if service.clients != nil {
+		if err := service.clients.DisableClient(ctx, item.UserID); err != nil {
+			return item, fmt.Errorf("disable client for %s subscription: %w", status, err)
+		}
 	}
 	return item, nil
 }

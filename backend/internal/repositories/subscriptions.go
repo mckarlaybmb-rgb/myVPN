@@ -41,3 +41,9 @@ func (repository *SubscriptionRepository) Renew(ctx context.Context, id string, 
 	err := repository.pool.QueryRow(ctx, `UPDATE subscriptions SET expires_at = expires_at + ($2 * INTERVAL '1 day'), status = 'active' WHERE id = $1 RETURNING id::text, user_id::text, plan, status, expires_at, created_at`, id, extraDays).Scan(&item.ID, &item.UserID, &item.Plan, &item.Status, &item.ExpiresAt, &item.CreatedAt)
 	return item, err
 }
+
+func (repository *SubscriptionRepository) UpdateStatus(ctx context.Context, id, status string) (models.Subscription, error) {
+	var item models.Subscription
+	err := repository.pool.QueryRow(ctx, `UPDATE subscriptions SET status = $2 WHERE id = $1 RETURNING id::text, user_id::text, plan, status, expires_at, created_at`, id, status).Scan(&item.ID, &item.UserID, &item.Plan, &item.Status, &item.ExpiresAt, &item.CreatedAt)
+	return item, err
+}

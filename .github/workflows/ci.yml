@@ -38,10 +38,21 @@ jobs:
         run: go vet ./...
         working-directory: backend
 
-      - name: run tests
+      - name: run unit tests (exclude integration)
+        working-directory: backend
+        run: |
+          # Wait for Postgres service to be ready (some packages may depend on DB types)
+          for i in `seq 1 10`; do pg_isready -h 127.0.0.1 && break || sleep 1; done
+          # Run all packages except backend/integration
+          PKGS=$(go list ./... | grep -v '/integration')
+          echo "Running unit tests for packages: $PKGS"
+          if [ -n "$PKGS" ]; then go test -v $PKGS; fi
+
+      - name: run integration tests
+        working-directory: backend/integration
         env:
           DATABASE_URL: postgres://vpnos:vpnos_pass@127.0.0.1:5432/vpnos?sslmode=disable
         run: |
+          # Wait for Postgres to be ready
           for i in `seq 1 10`; do pg_isready -h 127.0.0.1 && break || sleep 1; done
-          go test ./... -v
-        working-directory: backend
+          go test -v ./...

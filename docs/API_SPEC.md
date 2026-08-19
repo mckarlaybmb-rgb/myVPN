@@ -26,7 +26,7 @@ The response is the created user with `id`, `email`, and `created_at`.
 
 ## Subscriptions
 
-`GET /api/v1/subscriptions` lists subscriptions ordered by creation time.
+`GET /api/v1/subscriptions/{user_id}` lists subscriptions for a user ordered by creation time.
 
 `POST /api/v1/subscriptions` creates a subscription and enqueues a durable job.
 
@@ -37,3 +37,13 @@ Request:
 ```
 
 The response is the created subscription. Invalid JSON or missing required fields returns `400`; database failures return `500`; unsupported methods return `405`.
+
+`POST /api/v1/subscriptions/{id}/renew` extends a subscription.
+
+Request:
+
+```json
+{"extra_days":30}
+```
+
+`extra_days` must be greater than zero. The renewal also enqueues a durable job.

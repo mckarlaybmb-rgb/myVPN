@@ -26,42 +26,35 @@ func NewService(repository Repository, runtime Runtime, inboundTag string) *Serv
 }
 
 func (service *Service) CreateClient(ctx context.Context, userID, email string) (models.XrayClient, error) {
-	client := models.XrayClient{
-		UserID:   userID,
-		Email:    email,
-		Protocol: "vless",
-		Config:   BuildVLESSConfig(service.inboundTag),
-		Enabled:  true,
-	}
+	client := models.XrayClient{UserID: userID, Email: email, Protocol: "vless", Config: BuildVLESSConfig(service.inboundTag), Enabled: true}
 	var err error
 	if client.UUID, err = newUUID(); err != nil {
 		return models.XrayClient{}, fmt.Errorf("generate xray client UUID: %w", err)
 	}
+	client.SubscriptionURL, err = service.runtime.AddUser(ctx, client)
+	if err != nil {
+		return models.XrayClient{}, fmt.Errorf("provision x-ui client: %w", err)
+	}
 	created, err := service.repository.Create(ctx, client)
 	if err != nil {
+		_ = service.runtime.RemoveUser(ctx, client)
 		return models.XrayClient{}, fmt.Errorf("persist xray client: %w", err)
-	}
-	if err := service.runtime.CreateClient(ctx, created); err != nil {
-		_ = service.repository.Delete(ctx, userID)
-		return models.XrayClient{}, fmt.Errorf("provision xray client: %w", err)
 	}
 	return created, nil
 }
-
 func (service *Service) DeleteClient(ctx context.Context, userID string) error {
 	client, err := service.repository.GetByUser(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("load xray client: %w", err)
 	}
-	if err := service.runtime.DeleteClient(ctx, client); err != nil {
-		return fmt.Errorf("delete xray client from runtime: %w", err)
+	if err := service.runtime.RemoveUser(ctx, client); err != nil {
+		return fmt.Errorf("delete xray client from x-ui: %w", err)
 	}
 	if err := service.repository.Delete(ctx, userID); err != nil {
 		return fmt.Errorf("delete xray client record: %w", err)
 	}
 	return nil
 }
-
 func (service *Service) EnableClient(ctx context.Context, userID string) error {
 	client, err := service.repository.GetByUser(ctx, userID)
 	if err != nil {
@@ -75,7 +68,6 @@ func (service *Service) EnableClient(ctx context.Context, userID string) error {
 	}
 	return service.repository.SetEnabled(ctx, userID, true)
 }
-
 func (service *Service) DisableClient(ctx context.Context, userID string) error {
 	client, err := service.repository.GetByUser(ctx, userID)
 	if err != nil {
@@ -89,7 +81,6 @@ func (service *Service) DisableClient(ctx context.Context, userID string) error 
 	}
 	return service.repository.SetEnabled(ctx, userID, false)
 }
-
 func newUUID() (string, error) {
 	bytes := make([]byte, 16)
 	if _, err := rand.Read(bytes); err != nil {

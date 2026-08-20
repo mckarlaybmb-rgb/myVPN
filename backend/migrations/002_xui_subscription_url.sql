@@ -1,0 +1,1 @@
+ALTER TABLE xray_clients ADD COLUMN IF NOT EXISTS subscription_url TEXT NOT NULL DEFAULT '';

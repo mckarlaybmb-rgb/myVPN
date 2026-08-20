@@ -4,75 +4,212 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
+	"io"
+	"log"
+	"net/http"
+	"net/http/cookiejar"
+	"net/url"
+	"strconv"
+	"strings"
 
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/models"
-	command "github.com/xtls/xray-core/app/proxyman/command"
-	protocol "github.com/xtls/xray-core/common/protocol"
-	serial "github.com/xtls/xray-core/common/serial"
-	vless "github.com/xtls/xray-core/proxy/vless"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 type Runtime interface {
-	CreateClient(context.Context, models.XrayClient) error
-	DeleteClient(context.Context, models.XrayClient) error
+	AddUser(context.Context, models.XrayClient) (string, error)
+	RemoveUser(context.Context, models.XrayClient) error
 	EnableClient(context.Context, models.XrayClient) error
 	DisableClient(context.Context, models.XrayClient) error
 }
 
-type HandlerServiceRuntime struct {
-	address    string
-	inboundTag string
+type Config struct {
+	BaseURL   string
+	Username  string
+	Password  string
+	InboundID int64
+}
+type Client struct {
+	config     Config
+	httpClient *http.Client
 }
 
-func NewHandlerServiceRuntime(address, inboundTag string) *HandlerServiceRuntime {
-	return &HandlerServiceRuntime{address: address, inboundTag: inboundTag}
+func NewClient(config Config) *Client {
+	jar, _ := cookiejar.New(nil)
+	return &Client{config: config, httpClient: &http.Client{Jar: jar}}
 }
 
-func (runtime *HandlerServiceRuntime) withClient(ctx context.Context, operation *serial.TypedMessage) error {
-	if runtime.address == "" || runtime.inboundTag == "" {
-		return fmt.Errorf("xray API address and inbound tag are required")
-	}
-	connection, err := grpc.DialContext(ctx, runtime.address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
-		var dialer net.Dialer
-		return dialer.DialContext(ctx, "tcp", address)
-	}))
+type apiResponse struct {
+	Success bool            `json:"success"`
+	Message string          `json:"msg"`
+	Object  json.RawMessage `json:"obj"`
+}
+
+func (client *Client) request(ctx context.Context, method, path string, body io.Reader, contentType string, response any) error {
+	request, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(client.config.BaseURL, "/")+path, body)
 	if err != nil {
 		return err
 	}
-	defer connection.Close()
-	_, err = command.NewHandlerServiceClient(connection).AlterInbound(ctx, &command.AlterInboundRequest{Tag: runtime.inboundTag, Operation: operation})
+	if contentType != "" {
+		request.Header.Set("Content-Type", contentType)
+	}
+	result, err := client.httpClient.Do(request)
+	if err != nil {
+		return err
+	}
+	defer result.Body.Close()
+	if result.StatusCode < 200 || result.StatusCode >= 300 {
+		return fmt.Errorf("x-ui returned HTTP %d", result.StatusCode)
+	}
+	if err := json.NewDecoder(result.Body).Decode(response); err != nil {
+		return fmt.Errorf("decode x-ui response: %w", err)
+	}
+	return nil
+}
+func (client *Client) login(ctx context.Context) error {
+	if client.config.BaseURL == "" || client.config.Username == "" || client.config.Password == "" || client.config.InboundID <= 0 {
+		return fmt.Errorf("x-ui base URL, username, password, and positive inbound ID are required")
+	}
+	form := url.Values{"username": {client.config.Username}, "password": {client.config.Password}}
+	var response apiResponse
+	if err := client.request(ctx, http.MethodPost, "/login", strings.NewReader(form.Encode()), "application/x-www-form-urlencoded", &response); err != nil {
+		return fmt.Errorf("x-ui login request: %w", err)
+	}
+	if !response.Success {
+		return fmt.Errorf("x-ui login failed: %s", response.Message)
+	}
+	return nil
+}
+func (client *Client) inbound(ctx context.Context) (map[string]any, error) {
+	var response apiResponse
+	path := "/panel/api/inbounds/get/" + strconv.FormatInt(client.config.InboundID, 10)
+	if err := client.request(ctx, http.MethodGet, path, strings.NewReader(""), "", &response); err != nil {
+		return nil, fmt.Errorf("get x-ui inbound: %w", err)
+	}
+	if !response.Success {
+		return nil, fmt.Errorf("get x-ui inbound failed: %s", response.Message)
+	}
+	var inbound map[string]any
+	if err := json.Unmarshal(response.Object, &inbound); err != nil {
+		return nil, fmt.Errorf("decode x-ui inbound: %w", err)
+	}
+	return inbound, nil
+}
+func (client *Client) updateInbound(ctx context.Context, inbound map[string]any) error {
+	form := url.Values{}
+	for key, value := range inbound {
+		if key == "id" {
+			continue
+		}
+		form.Set(key, formValue(value))
+	}
+	var response apiResponse
+	path := "/panel/api/inbounds/update/" + strconv.FormatInt(client.config.InboundID, 10)
+	if err := client.request(ctx, http.MethodPost, path, strings.NewReader(form.Encode()), "application/x-www-form-urlencoded", &response); err != nil {
+		return fmt.Errorf("update x-ui inbound: %w", err)
+	}
+	if !response.Success {
+		return fmt.Errorf("update x-ui inbound failed: %s", response.Message)
+	}
+	return nil
+}
+
+func formValue(value any) string {
+	if text, ok := value.(string); ok {
+		return text
+	}
+	if _, ok := value.(map[string]any); ok {
+		encoded, _ := json.Marshal(value)
+		return string(encoded)
+	}
+	if _, ok := value.([]any); ok {
+		encoded, _ := json.Marshal(value)
+		return string(encoded)
+	}
+	return fmt.Sprint(value)
+}
+
+func inboundSettings(inbound map[string]any) (map[string]any, error) {
+	settings, ok := inbound["settings"].(string)
+	if !ok {
+		return nil, fmt.Errorf("x-ui inbound settings are not a JSON string")
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(settings), &result); err != nil {
+		return nil, fmt.Errorf("decode x-ui inbound settings: %w", err)
+	}
+	return result, nil
+}
+func (client *Client) AddUser(ctx context.Context, vpnClient models.XrayClient) (string, error) {
+	if err := client.login(ctx); err != nil {
+		return "", err
+	}
+	inbound, err := client.inbound(ctx)
+	if err != nil {
+		return "", err
+	}
+	settings, err := inboundSettings(inbound)
+	if err != nil {
+		return "", err
+	}
+	clients, _ := settings["clients"].([]any)
+	subID := strings.ReplaceAll(vpnClient.UUID, "-", "")
+	clients = append(clients, map[string]any{"id": vpnClient.UUID, "email": vpnClient.Email, "enable": true, "flow": configString(vpnClient.Config, "flow"), "subId": subID})
+	settings["clients"] = clients
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		return "", err
+	}
+	inbound["settings"] = string(encoded)
+	if err := client.updateInbound(ctx, inbound); err != nil {
+		return "", err
+	}
+	log.Printf("x-ui client added: email=%s inbound=%d", vpnClient.Email, client.config.InboundID)
+	return strings.TrimRight(client.config.BaseURL, "/") + "/sub/" + subID, nil
+}
+func (client *Client) RemoveUser(ctx context.Context, vpnClient models.XrayClient) error {
+	if err := client.login(ctx); err != nil {
+		return err
+	}
+	inbound, err := client.inbound(ctx)
+	if err != nil {
+		return err
+	}
+	settings, err := inboundSettings(inbound)
+	if err != nil {
+		return err
+	}
+	clients, _ := settings["clients"].([]any)
+	filtered := make([]any, 0, len(clients))
+	for _, entry := range clients {
+		item, ok := entry.(map[string]any)
+		if !ok || (item["id"] != vpnClient.UUID && item["email"] != vpnClient.Email) {
+			filtered = append(filtered, entry)
+		}
+	}
+	settings["clients"] = filtered
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		return err
+	}
+	inbound["settings"] = string(encoded)
+	if err := client.updateInbound(ctx, inbound); err != nil {
+		return err
+	}
+	log.Printf("x-ui client removed: email=%s inbound=%d", vpnClient.Email, client.config.InboundID)
+	return nil
+}
+func (client *Client) EnableClient(ctx context.Context, vpnClient models.XrayClient) error {
+	_, err := client.AddUser(ctx, vpnClient)
 	return err
 }
-
-func (runtime *HandlerServiceRuntime) CreateClient(ctx context.Context, client models.XrayClient) error {
-	return runtime.withClient(ctx, serial.ToTypedMessage(&command.AddUserOperation{User: runtime.user(client)}))
+func (client *Client) DisableClient(ctx context.Context, vpnClient models.XrayClient) error {
+	return client.RemoveUser(ctx, vpnClient)
 }
-
-func (runtime *HandlerServiceRuntime) DeleteClient(ctx context.Context, client models.XrayClient) error {
-	return runtime.withClient(ctx, serial.ToTypedMessage(&command.RemoveUserOperation{Email: client.Email}))
+func configString(config map[string]any, key string) string {
+	value, _ := config[key].(string)
+	return value
 }
-
-func (runtime *HandlerServiceRuntime) EnableClient(ctx context.Context, client models.XrayClient) error {
-	return runtime.CreateClient(ctx, client)
-}
-
-func (runtime *HandlerServiceRuntime) DisableClient(ctx context.Context, client models.XrayClient) error {
-	return runtime.DeleteClient(ctx, client)
-}
-
-func (runtime *HandlerServiceRuntime) user(client models.XrayClient) *protocol.User {
-	flow := ""
-	if value, ok := client.Config["flow"].(string); ok {
-		flow = value
-	}
-	return &protocol.User{Email: client.Email, Account: serial.ToTypedMessage(&vless.Account{Id: client.UUID, Flow: flow, Encryption: "none"})}
-}
-
 func BuildVLESSConfig(inboundTag string) map[string]any {
 	return map[string]any{"protocol": "vless", "inbound_tag": inboundTag, "flow": "xtls-rprx-vision", "encryption": "none"}
 }
-
 func ConfigJSON(config map[string]any) ([]byte, error) { return json.Marshal(config) }

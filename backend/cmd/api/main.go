@@ -53,7 +53,7 @@ func main() {
 		log.Fatal(err)
 	}
 	queue := jobs.NewQueue(pool)
-	xrayService := xray.NewService(repositories.NewXrayClientRepository(pool), xray.NewHandlerServiceRuntime(cfg.XrayAPIAddr, cfg.XrayInbound), cfg.XrayInbound)
+	xrayService := xray.NewService(repositories.NewXrayClientRepository(pool), xray.NewClient(xray.Config{BaseURL: cfg.XUIBaseURL, Username: cfg.XUIUsername, Password: cfg.XUIPassword, InboundID: cfg.XUIInboundID}), "x-ui")
 	routes := handlers.New(services.NewUserService(repositories.NewUserRepository(pool), xrayService), services.NewSubscriptionService(repositories.NewSubscriptionRepository(pool), queue, xrayService))
 
 	apiHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

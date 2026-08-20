@@ -40,14 +40,14 @@ type fakeRuntime struct {
 	failCreate                          bool
 }
 
-func (runtime *fakeRuntime) CreateClient(context.Context, models.XrayClient) error {
+func (runtime *fakeRuntime) AddUser(context.Context, models.XrayClient) (string, error) {
 	runtime.created++
 	if runtime.failCreate {
-		return errors.New("runtime unavailable")
+		return "", errors.New("runtime unavailable")
 	}
-	return nil
+	return "https://x-ui.example/sub/client", nil
 }
-func (runtime *fakeRuntime) DeleteClient(context.Context, models.XrayClient) error {
+func (runtime *fakeRuntime) RemoveUser(context.Context, models.XrayClient) error {
 	runtime.deleted++
 	return nil
 }
@@ -74,8 +74,8 @@ func TestServiceCreatesVLESSClientAndRollsBackRuntimeFailure(t *testing.T) {
 
 	failingRuntime := &fakeRuntime{failCreate: true}
 	failingRepository := &fakeRepository{}
-	if _, err := NewService(failingRepository, failingRuntime, "tag").CreateClient(context.Background(), "user-2", "two@example.com"); err == nil || !failingRepository.deleted {
-		t.Fatalf("expected provisioning failure with rollback: err=%v deleted=%v", err, failingRepository.deleted)
+	if _, err := NewService(failingRepository, failingRuntime, "tag").CreateClient(context.Background(), "user-2", "two@example.com"); err == nil || failingRepository.deleted {
+		t.Fatalf("expected provisioning failure before persistence: err=%v deleted=%v", err, failingRepository.deleted)
 	}
 }
 

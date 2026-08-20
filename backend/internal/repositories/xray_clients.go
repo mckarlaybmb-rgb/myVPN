@@ -20,15 +20,15 @@ func (repository *XrayClientRepository) Create(ctx context.Context, client model
 		return models.XrayClient{}, err
 	}
 	return repository.scanClient(repository.pool.QueryRow(ctx, `
-		INSERT INTO xray_clients (user_id, email, uuid, protocol, config, enabled)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id::text, user_id::text, email, uuid::text, protocol, config, enabled, created_at, updated_at`,
-		client.UserID, client.Email, client.UUID, client.Protocol, config, client.Enabled))
+		INSERT INTO xray_clients (user_id, email, uuid, subscription_url, protocol, config, enabled)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id::text, user_id::text, email, uuid::text, subscription_url, protocol, config, enabled, created_at, updated_at`,
+		client.UserID, client.Email, client.UUID, client.SubscriptionURL, client.Protocol, config, client.Enabled))
 }
 
 func (repository *XrayClientRepository) GetByUser(ctx context.Context, userID string) (models.XrayClient, error) {
 	return repository.scanClient(repository.pool.QueryRow(ctx, `
-		SELECT id::text, user_id::text, email, uuid::text, protocol, config, enabled, created_at, updated_at
+		SELECT id::text, user_id::text, email, uuid::text, subscription_url, protocol, config, enabled, created_at, updated_at
 		FROM xray_clients WHERE user_id = $1`, userID))
 }
 
@@ -61,7 +61,7 @@ type clientRow interface {
 func (repository *XrayClientRepository) scanClient(row clientRow) (models.XrayClient, error) {
 	var client models.XrayClient
 	var config []byte
-	if err := row.Scan(&client.ID, &client.UserID, &client.Email, &client.UUID, &client.Protocol, &config, &client.Enabled, &client.CreatedAt, &client.UpdatedAt); err != nil {
+	if err := row.Scan(&client.ID, &client.UserID, &client.Email, &client.UUID, &client.SubscriptionURL, &client.Protocol, &config, &client.Enabled, &client.CreatedAt, &client.UpdatedAt); err != nil {
 		return client, err
 	}
 	if err := json.Unmarshal(config, &client.Config); err != nil {

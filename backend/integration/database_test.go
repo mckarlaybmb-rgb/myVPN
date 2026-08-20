@@ -3,6 +3,10 @@ package integration
 import (
 	"context"
 	"fmt"
+	"os"
+	"testing"
+	"time"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/database"
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/jobs"
@@ -10,15 +14,14 @@ import (
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/repositories"
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/services"
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/xray"
-	"os"
-	"testing"
-	"time"
 )
 
 type integrationRuntime struct{ disabled int }
 
-func (runtime *integrationRuntime) CreateClient(context.Context, models.XrayClient) error { return nil }
-func (runtime *integrationRuntime) DeleteClient(context.Context, models.XrayClient) error { return nil }
+func (runtime *integrationRuntime) AddUser(context.Context, models.XrayClient) (string, error) {
+	return "https://x-ui.example/sub/client", nil
+}
+func (runtime *integrationRuntime) RemoveUser(context.Context, models.XrayClient) error   { return nil }
 func (runtime *integrationRuntime) EnableClient(context.Context, models.XrayClient) error { return nil }
 func (runtime *integrationRuntime) DisableClient(context.Context, models.XrayClient) error {
 	runtime.disabled++

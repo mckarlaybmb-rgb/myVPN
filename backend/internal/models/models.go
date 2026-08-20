@@ -9,15 +9,16 @@ type User struct {
 }
 
 type XrayClient struct {
-	ID        string         `json:"id"`
-	UserID    string         `json:"user_id"`
-	Email     string         `json:"email"`
-	UUID      string         `json:"uuid"`
-	Protocol  string         `json:"protocol"`
-	Config    map[string]any `json:"config"`
-	Enabled   bool           `json:"enabled"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	ID              string         `json:"id"`
+	UserID          string         `json:"user_id"`
+	Email           string         `json:"email"`
+	UUID            string         `json:"uuid"`
+	SubscriptionURL string         `json:"subscription_url"`
+	Protocol        string         `json:"protocol"`
+	Config          map[string]any `json:"config"`
+	Enabled         bool           `json:"enabled"`
+	CreatedAt       time.Time      `json:"created_at"`
+	UpdatedAt       time.Time      `json:"updated_at"`
 }
 
 type Subscription struct {

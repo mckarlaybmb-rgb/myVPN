@@ -22,14 +22,11 @@ BACKEND_PORT=8080
 ADMIN_API_KEY=supersecretapikey
 LOG_LEVEL=info
 
-# Xray integration
-XRAY_BIN=/usr/local/bin/xray
-XRAY_API_ADDR=127.0.0.1:12789
-XRAY_INBOUND_TAG=vless-reality-tcp
-XRAY_HOST=vpn.example.com
-XRAY_PORT=443
-XRAY_SERVER_PUBKEY=<server_public_key_placeholder>
-XRAY_SHORT_ID=<shortid_placeholder>
+# x-ui integration
+XUI_BASE_URL=http://x-ui:2053
+XUI_USERNAME=admin
+XUI_PASSWORD=CHANGE_ME
+XUI_INBOUND_ID=1
 
 # Retry config
 XRAY_RETRY_COUNT=3

@@ -3,8 +3,12 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
+	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -63,6 +67,48 @@ func (queue *Queue) Complete(ctx context.Context, id string) error {
 }
 
 func (queue *Queue) Fail(ctx context.Context, id, message string) error {
-	_, err := queue.pool.Exec(ctx, `UPDATE job_queue SET status = 'failed', last_error = $2, processed_at = NOW() WHERE id = $1 AND status = 'processing'`, id, message)
+	_, err := queue.pool.Exec(ctx, `UPDATE job_queue SET status = CASE WHEN attempts < 3 THEN 'pending' ELSE 'failed' END, available_at = CASE WHEN attempts < 3 THEN NOW() + INTERVAL '1 minute' ELSE available_at END, last_error = $2, processed_at = CASE WHEN attempts < 3 THEN NULL ELSE NOW() END WHERE id = $1 AND status = 'processing'`, id, message)
 	return err
+}
+
+type Handler func(context.Context, Job) error
+type Worker struct {
+	queue        *Queue
+	handlers     map[string]Handler
+	pollInterval time.Duration
+}
+
+func NewWorker(queue *Queue, pollInterval time.Duration, handlers map[string]Handler) *Worker {
+	return &Worker{queue: queue, pollInterval: pollInterval, handlers: handlers}
+}
+func (worker *Worker) Run(ctx context.Context) error {
+	ticker := time.NewTicker(worker.pollInterval)
+	defer ticker.Stop()
+	for {
+		if err := worker.process(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("job worker: %v", err)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+func (worker *Worker) process(ctx context.Context) error {
+	job, err := worker.queue.Claim(ctx)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	handler, ok := worker.handlers[job.Type]
+	if !ok {
+		return worker.queue.Fail(ctx, job.ID, "unsupported job type")
+	}
+	if err := handler(ctx, job); err != nil {
+		return worker.queue.Fail(ctx, job.ID, err.Error())
+	}
+	return worker.queue.Complete(ctx, job.ID)
 }

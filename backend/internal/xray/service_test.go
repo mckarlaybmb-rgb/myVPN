@@ -9,15 +9,28 @@ import (
 )
 
 type fakeRepository struct {
-	client  models.XrayClient
-	deleted bool
-	set     *bool
+	client     models.XrayClient
+	deleted    bool
+	set        *bool
+	failCreate bool
 }
 
 func (repository *fakeRepository) Create(_ context.Context, client models.XrayClient) (models.XrayClient, error) {
+	if repository.failCreate {
+		return models.XrayClient{}, errors.New("database unavailable")
+	}
 	repository.client = client
 	repository.client.ID = "client-1"
 	return repository.client, nil
+}
+
+func TestServiceRollsBackRuntimeWhenPersistenceFails(t *testing.T) {
+	repository := &fakeRepository{failCreate: true}
+	runtime := &fakeRuntime{}
+	_, err := NewService(repository, runtime, "tag").CreateClient(context.Background(), "user-1", "user@example.com")
+	if err == nil || runtime.deleted != 1 {
+		t.Fatalf("err=%v runtime=%#v", err, runtime)
+	}
 }
 func (repository *fakeRepository) GetByUser(context.Context, string) (models.XrayClient, error) {
 	if repository.client.ID == "" {

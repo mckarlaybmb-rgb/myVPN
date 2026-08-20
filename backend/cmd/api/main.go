@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/config"
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/database"
@@ -16,6 +17,7 @@ import (
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/middleware"
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/repositories"
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/services"
+	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/telegram"
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/xray"
 )
 
@@ -41,6 +43,9 @@ func resolveMigrationsDir() string {
 
 func main() {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		log.Fatal(err)
+	}
 	ctx := context.Background()
 	pool, err := database.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -54,7 +59,31 @@ func main() {
 	}
 	queue := jobs.NewQueue(pool)
 	xrayService := xray.NewService(repositories.NewXrayClientRepository(pool), xray.NewClient(xray.Config{BaseURL: cfg.XUIBaseURL, Username: cfg.XUIUsername, Password: cfg.XUIPassword, InboundID: cfg.XUIInboundID}), "x-ui")
-	routes := handlers.New(services.NewUserService(repositories.NewUserRepository(pool), xrayService), services.NewSubscriptionService(repositories.NewSubscriptionRepository(pool), queue, xrayService))
+	routes := handlers.New(services.NewUserService(repositories.NewUserRepository(pool), xrayService), services.NewSubscriptionService(repositories.NewSubscriptionRepository(pool), queue, xrayService), repositories.NewAdminRepository(pool))
+	worker := jobs.NewWorker(queue, time.Second, map[string]jobs.Handler{"subscription.created": func(context.Context, jobs.Job) error { return nil }, "subscription.renewed": func(context.Context, jobs.Job) error { return nil }})
+	jobContext, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		if err := worker.Run(jobContext); err != nil && jobContext.Err() == nil {
+			log.Printf("job worker stopped: %v", err)
+		}
+	}()
+	adminRepository := repositories.NewAdminRepository(pool)
+	go func() { _ = jobs.NewNodeChecker(adminRepository).Run(jobContext) }()
+	var notifier jobs.Notifier
+	if cfg.TelegramEnabled {
+		store := telegram.NewPGStore(pool)
+		bot := telegram.NewBot(cfg.TelegramBotToken, store)
+		notifier = telegram.NewNotifier(pool, bot)
+		go func() {
+			if err := bot.Poll(jobContext); err != nil && jobContext.Err() == nil {
+				log.Printf("telegram bot stopped: %v", err)
+			}
+		}()
+	}
+	go func() {
+		_ = jobs.NewExpiryScheduler(repositories.NewSubscriptionRepository(pool), xrayService, notifier).Run(jobContext)
+	}()
 
 	apiHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
@@ -63,6 +92,18 @@ func main() {
 		switch {
 		case method == http.MethodPost && path == "/api/v1/users":
 			routes.CreateUser(w, r)
+			return
+		case method == http.MethodGet && path == "/api/v1/admin/stats":
+			routes.AdminStats(w, r)
+			return
+		case method == http.MethodGet && path == "/api/v1/admin/nodes":
+			routes.AdminNodes(w, r)
+			return
+		case method == http.MethodGet && path == "/api/v1/admin/subscriptions":
+			routes.AdminSubscriptions(w, r)
+			return
+		case method == http.MethodGet && path == "/api/v1/admin/users":
+			routes.AdminUsers(w, r)
 			return
 		case method == http.MethodGet && path == "/api/v1/users":
 			routes.ListUsers(w, r)

@@ -110,7 +110,7 @@ func TestSubscriptionHandlers(t *testing.T) {
 	expiresAt := "2030-01-01T00:00:00Z"
 	createResponse := httptest.NewRecorder()
 	handler.CreateSubscription(createResponse, httptest.NewRequest(http.MethodPost, "/api/v1/subscriptions", strings.NewReader(`{"user_id":"user-1","plan":"monthly","expires_at":"`+expiresAt+`"}`)))
-	if createResponse.Code != http.StatusCreated || subscriptions.createdUserID != "user-1" || len(queue.jobTypes) != 1 {
+	if createResponse.Code != http.StatusCreated || subscriptions.createdUserID != "user-1" || len(queue.jobTypes) != 0 {
 		t.Fatalf("unexpected create response: %d, repository=%#v queue=%#v", createResponse.Code, subscriptions, queue)
 	}
 
@@ -127,7 +127,7 @@ func TestSubscriptionHandlers(t *testing.T) {
 	renewRequest.SetPathValue("id", "sub-1")
 	renewResponse := httptest.NewRecorder()
 	handler.RenewSubscription(renewResponse, renewRequest)
-	if renewResponse.Code != http.StatusOK || subscriptions.renewedID != "sub-1" || subscriptions.renewedDays != 30 || len(queue.jobTypes) != 2 {
+	if renewResponse.Code != http.StatusOK || subscriptions.renewedID != "sub-1" || subscriptions.renewedDays != 30 || len(queue.jobTypes) != 0 {
 		t.Fatalf("unexpected renew response: %d, repository=%#v queue=%#v", renewResponse.Code, subscriptions, queue)
 	}
 }

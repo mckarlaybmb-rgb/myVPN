@@ -18,24 +18,38 @@ type JobEnqueuer interface {
 }
 type SubscriptionService struct {
 	repository SubscriptionRepository
-	queue      JobEnqueuer
 	clients    ClientDisabler
+	enabler    ClientEnabler
+	notifier   EventNotifier
 }
 
 type ClientDisabler interface {
 	DisableClient(context.Context, string) error
+}
+type ClientEnabler interface {
+	EnableClient(context.Context, string) error
 }
 
 type SubscriptionStatusRepository interface {
 	UpdateStatus(context.Context, string, string) (models.Subscription, error)
 }
 
-func NewSubscriptionService(repository SubscriptionRepository, queue JobEnqueuer, clients ...ClientDisabler) *SubscriptionService {
+func NewSubscriptionService(repository SubscriptionRepository, _ JobEnqueuer, dependencies ...any) *SubscriptionService {
 	var clientDisabler ClientDisabler
-	if len(clients) > 0 {
-		clientDisabler = clients[0]
+	var enabler ClientEnabler
+	var notifier EventNotifier
+	for _, dependency := range dependencies {
+		if value, ok := dependency.(ClientDisabler); ok {
+			clientDisabler = value
+		}
+		if value, ok := dependency.(ClientEnabler); ok {
+			enabler = value
+		}
+		if value, ok := dependency.(EventNotifier); ok {
+			notifier = value
+		}
 	}
-	return &SubscriptionService{repository: repository, queue: queue, clients: clientDisabler}
+	return &SubscriptionService{repository: repository, clients: clientDisabler, enabler: enabler, notifier: notifier}
 }
 func (service *SubscriptionService) ListByUser(ctx context.Context, userID string) ([]models.Subscription, error) {
 	return service.repository.ListByUser(ctx, userID)
@@ -45,8 +59,8 @@ func (service *SubscriptionService) Create(ctx context.Context, userID, plan str
 	if err != nil {
 		return item, fmt.Errorf("create subscription: %w", err)
 	}
-	if _, err := service.queue.Enqueue(ctx, "subscription.created", item.ID, map[string]string{"user_id": userID}); err != nil {
-		return item, fmt.Errorf("enqueue subscription job: %w", err)
+	if service.notifier != nil {
+		_ = service.notifier.NotifyUser(ctx, userID, "subscription.created", item.ID)
 	}
 	return item, nil
 }
@@ -58,8 +72,16 @@ func (service *SubscriptionService) Renew(ctx context.Context, id string, extraD
 	if err != nil {
 		return item, fmt.Errorf("renew subscription: %w", err)
 	}
-	if _, err := service.queue.Enqueue(ctx, "subscription.renewed", item.ID, map[string]string{"user_id": item.UserID}); err != nil {
-		return item, fmt.Errorf("enqueue renewal job: %w", err)
+	if service.enabler != nil {
+		if err := service.enabler.EnableClient(ctx, item.UserID); err != nil {
+			return item, fmt.Errorf("enable client after renewal: %w", err)
+		}
+		if service.notifier != nil {
+			_ = service.notifier.NotifyUser(ctx, item.UserID, "vpn.account_re_enabled", item.ID)
+		}
+	}
+	if service.notifier != nil {
+		_ = service.notifier.NotifyUser(ctx, item.UserID, "subscription.renewed", item.ID)
 	}
 	return item, nil
 }
@@ -85,6 +107,13 @@ func (service *SubscriptionService) updateStatus(ctx context.Context, id, status
 		if err := service.clients.DisableClient(ctx, item.UserID); err != nil {
 			return item, fmt.Errorf("disable client for %s subscription: %w", status, err)
 		}
+	}
+	if service.notifier != nil {
+		event := "vpn.account_suspended"
+		if status == "expired" {
+			event = "subscription.expired"
+		}
+		_ = service.notifier.NotifyUser(ctx, item.UserID, event, item.ID)
 	}
 	return item, nil
 }

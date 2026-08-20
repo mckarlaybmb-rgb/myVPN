@@ -2,7 +2,9 @@ package jobs
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"math"
 	"net"
 	"strconv"
 	"time"
@@ -52,23 +54,25 @@ func (scheduler *ExpiryScheduler) RunOnce(ctx context.Context) {
 		if item.Status == "expired" {
 			continue
 		}
-		if item.ExpiresAt.Before(time.Now()) {
+		now := time.Now()
+		if !item.ExpiresAt.After(now) {
+			if err := scheduler.disabler.DisableClient(ctx, item.UserID); err != nil {
+				log.Printf("disable expired client %s: %v", item.UserID, err)
+				continue
+			}
 			if _, err := scheduler.repository.UpdateStatus(ctx, item.ID, "expired"); err != nil {
 				log.Printf("expire subscription %s: %v", item.ID, err)
 				continue
-			}
-			if err := scheduler.disabler.DisableClient(ctx, item.UserID); err != nil {
-				log.Printf("disable expired client %s: %v", item.UserID, err)
 			}
 			if scheduler.notifier != nil {
 				_ = scheduler.notifier.Notify(ctx, "subscription.expired", item.ID)
 			}
 			continue
 		}
-		days := int(time.Until(item.ExpiresAt).Hours() / 24)
+		days := int(math.Ceil(item.ExpiresAt.Sub(now).Hours() / 24))
 		if days == 7 || days == 3 || days == 1 {
 			if scheduler.notifier != nil {
-				_ = scheduler.notifier.Notify(ctx, "subscription.expiring", item.ID)
+				_ = scheduler.notifier.Notify(ctx, fmt.Sprintf("subscription.expiring.%dd", days), item.ID)
 			}
 		}
 	}

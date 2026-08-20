@@ -52,6 +52,20 @@ func TestExpirySchedulerExpiresAndNotifiesOnce(t *testing.T) {
 		t.Fatalf("status updates=%d", f.statuses)
 	}
 }
+func TestExpirySchedulerRetriesWhenDisableFails(t *testing.T) {
+	f := &fakeExpiry{items: []models.Subscription{{ID: "sub-1", UserID: "user-1", Status: "active", ExpiresAt: time.Now().Add(-time.Hour)}}}
+	d := &fakeDisable{fail: true}
+	s := NewExpiryScheduler(f, d, nil)
+	s.RunOnce(context.Background())
+	if f.statuses != 0 {
+		t.Fatalf("status updates=%d", f.statuses)
+	}
+	d.fail = false
+	s.RunOnce(context.Background())
+	if f.statuses != 1 || d.calls != 2 {
+		t.Fatalf("status updates=%d disable calls=%d", f.statuses, d.calls)
+	}
+}
 func TestNodeCheckerContinuesAfterNodeFailure(t *testing.T) {
 	repository := &fakeNodes{nodes: []models.Node{{ID: "1", Address: "bad", Port: 1}, {ID: "2", Address: "bad", Port: 1}}}
 	NewNodeChecker(repository).RunOnce(context.Background())

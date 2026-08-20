@@ -55,7 +55,7 @@ func TestSubscriptionSuspensionAndExpirationDisableClient(t *testing.T) {
 		t.Fatalf("expiration disabled user %q", disabler.userID)
 	}
 }
-func TestSubscriptionServiceEnqueuesCreateAndRenew(t *testing.T) {
+func TestSubscriptionServiceDoesNotEnqueueUnsupportedJobs(t *testing.T) {
 	repository := &fakeSubscriptions{}
 	queue := &fakeQueue{}
 	service := NewSubscriptionService(repository, queue)
@@ -66,7 +66,7 @@ func TestSubscriptionServiceEnqueuesCreateAndRenew(t *testing.T) {
 	if _, err := service.Renew(ctx, "sub-1", 30); err != nil {
 		t.Fatal(err)
 	}
-	if repository.renewedDays != 30 || len(queue.types) != 2 || queue.types[0] != "subscription.created" || queue.types[1] != "subscription.renewed" {
+	if repository.renewedDays != 30 || len(queue.types) != 0 {
 		t.Fatalf("repository=%#v queue=%#v", repository, queue)
 	}
 	if _, err := service.Renew(ctx, "sub-1", 0); err == nil {

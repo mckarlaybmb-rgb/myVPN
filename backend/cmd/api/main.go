@@ -59,8 +59,18 @@ func main() {
 	}
 	queue := jobs.NewQueue(pool)
 	xrayService := xray.NewService(repositories.NewXrayClientRepository(pool), xray.NewClient(xray.Config{BaseURL: cfg.XUIBaseURL, Username: cfg.XUIUsername, Password: cfg.XUIPassword, InboundID: cfg.XUIInboundID}), "x-ui")
-	routes := handlers.New(services.NewUserService(repositories.NewUserRepository(pool), xrayService), services.NewSubscriptionService(repositories.NewSubscriptionRepository(pool), queue, xrayService), repositories.NewAdminRepository(pool))
-	worker := jobs.NewWorker(queue, time.Second, map[string]jobs.Handler{"subscription.created": func(context.Context, jobs.Job) error { return nil }, "subscription.renewed": func(context.Context, jobs.Job) error { return nil }})
+	var notifier jobs.Notifier
+	var eventNotifier services.EventNotifier
+	var bot *telegram.Bot
+	if cfg.TelegramEnabled {
+		store := telegram.NewPGStore(pool)
+		bot = telegram.NewBot(cfg.TelegramBotToken, store)
+		telegramNotifier := telegram.NewNotifier(pool, bot)
+		notifier = telegramNotifier
+		eventNotifier = telegramNotifier
+	}
+	routes := handlers.New(services.NewUserService(repositories.NewUserRepository(pool), xrayService, eventNotifier), services.NewSubscriptionService(repositories.NewSubscriptionRepository(pool), queue, xrayService, eventNotifier), repositories.NewAdminRepository(pool))
+	worker := jobs.NewWorker(queue, time.Second, map[string]jobs.Handler{})
 	jobContext, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {
@@ -70,11 +80,7 @@ func main() {
 	}()
 	adminRepository := repositories.NewAdminRepository(pool)
 	go func() { _ = jobs.NewNodeChecker(adminRepository).Run(jobContext) }()
-	var notifier jobs.Notifier
 	if cfg.TelegramEnabled {
-		store := telegram.NewPGStore(pool)
-		bot := telegram.NewBot(cfg.TelegramBotToken, store)
-		notifier = telegram.NewNotifier(pool, bot)
 		go func() {
 			if err := bot.Poll(jobContext); err != nil && jobContext.Err() == nil {
 				log.Printf("telegram bot stopped: %v", err)

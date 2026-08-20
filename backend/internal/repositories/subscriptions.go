@@ -48,7 +48,7 @@ func (repository *SubscriptionRepository) UpdateStatus(ctx context.Context, id, 
 	return item, err
 }
 func (repository *SubscriptionRepository) ListDue(ctx context.Context, now time.Time) ([]models.Subscription, error) {
-	rows, err := repository.pool.Query(ctx, `SELECT id::text,user_id::text,plan,status,expires_at,created_at,updated_at FROM subscriptions WHERE status <> 'expired' AND expires_at <= $1 + INTERVAL '7 days'`, now)
+	rows, err := repository.pool.Query(ctx, `SELECT id::text,user_id::text,plan,status,expires_at,created_at,updated_at FROM subscriptions WHERE status <> 'expired' AND expires_at <= ($1::timestamptz + INTERVAL '7 days')`, now)
 	if err != nil {
 		return nil, err
 	}

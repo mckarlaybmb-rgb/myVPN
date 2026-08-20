@@ -6,6 +6,7 @@ type User struct {
 	ID        string    `json:"id"`
 	Email     string    `json:"email"`
 	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type XrayClient struct {
@@ -28,4 +29,15 @@ type Subscription struct {
 	Status    string    `json:"status"`
 	ExpiresAt time.Time `json:"expires_at"`
 	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type Node struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Address     string     `json:"address"`
+	Port        int        `json:"port"`
+	Status      string     `json:"status"`
+	LastCheckAt *time.Time `json:"last_check_at,omitempty"`
+	LatencyMS   *int       `json:"latency_ms,omitempty"`
 }

@@ -153,6 +153,12 @@ func (client *Client) AddUser(ctx context.Context, vpnClient models.XrayClient) 
 	}
 	clients, _ := settings["clients"].([]any)
 	subID := strings.ReplaceAll(vpnClient.UUID, "-", "")
+	for _, entry := range clients {
+		item, ok := entry.(map[string]any)
+		if ok && (item["id"] == vpnClient.UUID || item["email"] == vpnClient.Email) {
+			return strings.TrimRight(client.config.BaseURL, "/") + "/sub/" + subID, nil
+		}
+	}
 	clients = append(clients, map[string]any{"id": vpnClient.UUID, "email": vpnClient.Email, "enable": true, "flow": configString(vpnClient.Config, "flow"), "subId": subID})
 	settings["clients"] = clients
 	encoded, err := json.Marshal(settings)
@@ -199,11 +205,43 @@ func (client *Client) RemoveUser(ctx context.Context, vpnClient models.XrayClien
 	return nil
 }
 func (client *Client) EnableClient(ctx context.Context, vpnClient models.XrayClient) error {
-	_, err := client.AddUser(ctx, vpnClient)
-	return err
+	return client.setClientEnabled(ctx, vpnClient, true)
 }
 func (client *Client) DisableClient(ctx context.Context, vpnClient models.XrayClient) error {
-	return client.RemoveUser(ctx, vpnClient)
+	return client.setClientEnabled(ctx, vpnClient, false)
+}
+
+func (client *Client) setClientEnabled(ctx context.Context, vpnClient models.XrayClient, enabled bool) error {
+	if err := client.login(ctx); err != nil {
+		return err
+	}
+	inbound, err := client.inbound(ctx)
+	if err != nil {
+		return err
+	}
+	settings, err := inboundSettings(inbound)
+	if err != nil {
+		return err
+	}
+	clients, _ := settings["clients"].([]any)
+	found := false
+	for _, entry := range clients {
+		item, ok := entry.(map[string]any)
+		if ok && (item["id"] == vpnClient.UUID || item["email"] == vpnClient.Email) {
+			item["enable"] = enabled
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("x-ui client not found: %s", vpnClient.Email)
+	}
+	settings["clients"] = clients
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		return err
+	}
+	inbound["settings"] = string(encoded)
+	return client.updateInbound(ctx, inbound)
 }
 func configString(config map[string]any, key string) string {
 	value, _ := config[key].(string)

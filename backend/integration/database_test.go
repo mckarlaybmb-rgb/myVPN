@@ -95,6 +95,21 @@ func TestQueueTransitions(t *testing.T) {
 	if err := queue.Fail(ctx, failedID, "test failure"); err != nil {
 		t.Fatal(err)
 	}
+	if err := assertJobStatus(ctx, pool, failedID, jobs.Pending); err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 2; attempt <= 3; attempt++ {
+		if _, err := pool.Exec(ctx, `UPDATE job_queue SET available_at = NOW() WHERE id = $1`, failedID); err != nil {
+			t.Fatal(err)
+		}
+		claimed, err = queue.Claim(ctx)
+		if err != nil || claimed.ID != failedID {
+			t.Fatalf("claim failed case attempt %d: job=%#v err=%v", attempt, claimed, err)
+		}
+		if err := queue.Fail(ctx, failedID, fmt.Sprintf("test failure attempt %d", attempt)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := assertJobStatus(ctx, pool, failedID, jobs.Failed); err != nil {
 		t.Fatal(err)
 	}

@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"github.com/jackc/pgx/v5"
+	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/models"
 	"github.com/mckarlaybmb-rgb/myVPN/backend/internal/services"
 	"net/http"
 	"strings"
@@ -13,10 +15,55 @@ import (
 type Handler struct {
 	users         *services.UserService
 	subscriptions *services.SubscriptionService
+	admin         AdminReader
 }
 
-func New(users *services.UserService, subscriptions *services.SubscriptionService) *Handler {
-	return &Handler{users: users, subscriptions: subscriptions}
+type AdminReader interface {
+	Stats(context.Context) (map[string]int, error)
+	ListNodes(context.Context) ([]models.Node, error)
+	ListSubscriptions(context.Context) ([]models.Subscription, error)
+	ListUsers(context.Context) ([]models.User, error)
+}
+
+func New(users *services.UserService, subscriptions *services.SubscriptionService, admin ...AdminReader) *Handler {
+	var reader AdminReader
+	if len(admin) > 0 {
+		reader = admin[0]
+	}
+	return &Handler{users: users, subscriptions: subscriptions, admin: reader}
+}
+
+func (handler *Handler) AdminStats(writer http.ResponseWriter, request *http.Request) {
+	if handler.admin == nil {
+		http.Error(writer, "admin service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	stats, err := handler.admin.Stats(request.Context())
+	writeResult(writer, stats, err, http.StatusOK)
+}
+func (handler *Handler) AdminNodes(writer http.ResponseWriter, request *http.Request) {
+	if handler.admin == nil {
+		http.Error(writer, "admin service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	items, err := handler.admin.ListNodes(request.Context())
+	writeResult(writer, items, err, http.StatusOK)
+}
+func (handler *Handler) AdminSubscriptions(writer http.ResponseWriter, request *http.Request) {
+	if handler.admin == nil {
+		http.Error(writer, "admin service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	items, err := handler.admin.ListSubscriptions(request.Context())
+	writeResult(writer, items, err, http.StatusOK)
+}
+func (handler *Handler) AdminUsers(writer http.ResponseWriter, request *http.Request) {
+	if handler.admin == nil {
+		http.Error(writer, "admin service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	items, err := handler.admin.ListUsers(request.Context())
+	writeResult(writer, items, err, http.StatusOK)
 }
 func (handler *Handler) Health(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, http.StatusOK, map[string]string{"status": "ok"})
